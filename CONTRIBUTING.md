@@ -44,8 +44,9 @@ rather than across several documents. Run `make help` for the list.
 | `make vet` | `go vet ./...` |
 | `make test` | `go test ./...` |
 | `make build` | builds the CLI to `bin/soroauth` |
-| `make vectors` | `cd testdata/gen && npm ci && node gen.mjs` |
+| `make vectors` | `cd testdata/gen && npm ci && node gen.mjs && node gen-passkey.mjs` |
 | `make vectors-check` | regenerates the vectors and fails if the committed files changed |
+| `make demo-check` | checks the browser demo's logic against the pinned SDK (`node examples/browser-passkey/app.test.mjs`) |
 | `make e2e` | builds the test contract with `stellar-cli` and runs `go test -tags e2e -v ./e2e/...` |
 | `make parity` | installs the pinned Python SDK into `.venv-parity` and runs the parity harness and its tests |
 | `make parity-rust` | runs the Rust stellar-xdr parity harness and its tests (needs Rust 1.93.0) |
@@ -350,12 +351,23 @@ failure the vectors exist to prevent. CI regenerates them on every push and
 fails if the committed files differ, so an edit will be caught — but the reason
 not to do it is that it destroys the evidence, not that you will be caught.
 
+There are two generators, because there are two things being proven:
+
+- `gen.mjs` writes `testdata/vectors/*.json`, the authorization-entry vectors,
+  against a pinned `@stellar/stellar-sdk`.
+- `gen-passkey.mjs` writes `testdata/vectors/passkey/*.json`, the passkey
+  signature-shape vectors, against a pinned `smart-account-kit`. The passkey
+  shape is not protocol-defined — a custom account's `__check_auth` decides it —
+  so there is no CAP to cite and the evidence is a real wallet library's output
+  instead.
+
 To change them, change the generator:
 
 ```sh
 cd testdata/gen
 npm ci
 node gen.mjs
+node gen-passkey.mjs
 ```
 
 Then commit the regenerated files together with the generator change.
@@ -371,8 +383,13 @@ If a vector disagrees with the Go code, the Go code is wrong until proven
 otherwise. If you believe the vector itself is wrong, stop and open an issue
 saying why, with the protocol reference — do not change it to make a test pass.
 
-The generator refuses to run against any `@stellar/stellar-sdk` other than the
-pinned 17.1.0, since a vector from another build is not evidence about this one.
+Each generator refuses to run against a library other than the version it is
+pinned to, since a vector from another build is not evidence about this one.
+`gen-passkey.mjs` additionally records the `@stellar/stellar-sdk` version
+`smart-account-kit` resolved and refuses a mismatch, and
+`passkey_golden_test.go` asserts both the inner signature map and the library's
+complete output, so the one-element vector `smart-account-kit` wraps its map in
+is pinned rather than assumed.
 
 ## Shared fixture deployment harness & running e2e tests
 

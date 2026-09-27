@@ -7,7 +7,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-- `DescribeSignature` and `SignatureShape` report structural descriptions of uncheckable custom account signatures best-effort without upgrading them into verification verdicts. (#63)
+- Passkey signature-shape golden vectors. `testdata/gen/gen-passkey.mjs` drives
+  a pinned `smart-account-kit@0.8.0` (the OpenZeppelin/Stellar SDK for smart
+  accounts with WebAuthn passkeys) and records the `{ public_key, signature }`
+  map it builds for fixed P-256 keys and signatures, including the leading-zero
+  and high-bit edge bytes. It refuses to run against any other library version,
+  `passkey_golden_test.go` asserts `Secp256r1SignatureScVal` reproduces every
+  vector byte for byte, and CI regenerates them and fails on drift. The passkey
+  signature shape is no longer only asserted in a guide. (#27)
+
+- `examples/browser-passkey` now signs *and submits*: it builds a native-XLM
+  SAC transfer from the wallet contract, simulates in record mode, derives and
+  signs the payload in the browser, re-simulates in enforce mode, submits, and
+  prints the transaction hash with a `stellar.expert` link. The fee payer is
+  either a relayer URL (no secret in the page) or a throwaway testnet secret
+  held in memory for one call. `examples/browser-passkey/app.test.mjs` runs the
+  page's SDK calls, credential-arm walk and signature ScVal shape against the
+  pinned SDK, because the ceremony itself needs a browser. (#55)
 
 - `VerifyAll` batch verification API with configurable concurrency (`WithConcurrency`), reporting per-entry verdicts without aborting the entire batch on individual entry failures. (#62)
 
