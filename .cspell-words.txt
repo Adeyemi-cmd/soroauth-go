@@ -75,6 +75,14 @@ workflow
 workflows
 xdr
 
+# Differential fuzzing
+# (difffuzz is the generator command; splitmix64 is the deterministic PRNG it
+# uses; DERECDSA appears in ParseDERECDSASignature.)
+difffuzz
+splitmix
+splitmix64
+DERECDSA
+
 # CAP references
 CAP-46-11
 CAP-71-01
