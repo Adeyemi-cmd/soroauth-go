@@ -77,10 +77,86 @@ const base64urlToBytes = (value) =>
     (character) => character.charCodeAt(0),
   );
 
-const bytesToHex = (bytes) =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-
 const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...bytes));
+
+const bytesToBase64url = (bytes) =>
+  bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/**
+ * The encodings a WebAuthn challenge may legitimately be written in, for a given
+ * payload hash: base64url with and without padding, standard base64 with and
+ * without padding, and hexadecimal.
+ *
+ * `WebAuthnAssertion.VerifyChallenge` in webauthn.go builds the same candidate
+ * list, and for the same reason: matching the received string against known
+ * encodings of the expected value has none of the ambiguity that decoding
+ * first does. A 64-character hexadecimal string is also valid base64url and
+ * would decode to the wrong bytes under a fixed decode order.
+ */
+export function challengeEncodings(payloadHex) {
+  const payload = Uint8Array.from(payloadHex.match(/../g), (byte) =>
+    parseInt(byte, 16),
+  );
+  const base64 = bytesToBase64(payload);
+  return [
+    bytesToBase64url(payload), // base64url, unpadded (the canonical one)
+    base64.replace(/\+/g, "-").replace(/\//g, "_"), // base64url, padded
+    base64.replace(/=+$/, ""), // standard base64, unpadded
+    base64, // standard base64, padded
+    payloadHex, // hexadecimal, lower case
+  ];
+}
+
+/** A comparison that does not exit on the first differing byte. */
+const constantTimeEqual = (a, b) => {
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i++) {
+    difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return difference === 0;
+};
+
+/**
+ * The challenge-binding check (WebAuthn Level 3, §7.2 step 11).
+ *
+ * The authenticator does not sign the payload: it signs
+ * `authenticatorData || SHA-256(clientDataJSON)`, and `clientDataJSON` carries
+ * the challenge the browser was given. Comparing `SHA-256(clientDataJSON)`
+ * against the payload — which an earlier revision of this demo did, following an
+ * earlier revision of docs/passkeys.md — can never hold, because the hash of
+ * the whole JSON is not the payload. The check is instead: the challenge the
+ * authenticator signed must be an encoding of this payload.
+ *
+ * Decoding the challenge first would be ambiguous (see `challengeEncodings`), so
+ * the received string is matched against the encodings of the expected value,
+ * and each candidate compared without early exit.
+ */
+export function verifyChallengeBinding(clientDataJSON, payloadHex) {
+  let clientData;
+  try {
+    clientData = JSON.parse(new TextDecoder().decode(clientDataJSON));
+  } catch {
+    throw new Error("clientDataJSON is not valid JSON");
+  }
+  if (clientData.type !== "webauthn.get") {
+    throw new Error(
+      `clientDataJSON type is ${JSON.stringify(clientData.type)}, want "webauthn.get"`,
+    );
+  }
+  if (typeof clientData.challenge !== "string" || clientData.challenge === "") {
+    throw new Error("clientDataJSON carries no challenge");
+  }
+  const matches = challengeEncodings(payloadHex).some((candidate) =>
+    constantTimeEqual(candidate, clientData.challenge),
+  );
+  if (!matches) {
+    throw new Error(
+      "the assertion does not commit to this payload (challenge binding failed)",
+    );
+  }
+  return clientData;
+}
 
 /** The explorer link a confirmed transaction hash resolves to. */
 export function explorerLink(hash, networkPassphrase) {
@@ -214,20 +290,16 @@ async function signPayloadWithPasskey(payloadHex, publicKey) {
   const clientDataJSON = new Uint8Array(assertion.response.clientDataJSON);
   const derSignature = new Uint8Array(assertion.response.signature);
 
-  // The challenge-binding check (WebAuthn Level 2 §6.1): the authenticator
-  // signed authenticatorData || SHA-256(clientDataJSON), and clientDataJSON
-  // carries the challenge the browser was given. Hash what was received and
-  // compare it against the payload being authorized — never read a challenge
-  // field out of the JSON and hash that, or an attacker who controls the JSON
-  // picks both sides of the comparison.
+  // The challenge-binding check: the challenge carried in the received client
+  // data must be an encoding of the payload this entry commits to.
+  verifyChallengeBinding(clientDataJSON, payloadHex);
+
+  // These are the bytes the authenticator actually signed, and the hash here is
+  // part of them rather than a challenge check (WebAuthn Level 3, §6.1):
+  // authenticatorData || SHA-256(clientDataJSON).
   const clientDataHash = new Uint8Array(
     await crypto.subtle.digest("SHA-256", clientDataJSON),
   );
-  if (bytesToHex(clientDataHash) !== payloadHex) {
-    throw new Error(
-      "the assertion does not commit to this payload (challenge binding failed)",
-    );
-  }
 
   // UP is bit 0, UV is bit 2, in the flags byte at index 32 (WebAuthn §6.1).
   const flags = authenticatorData[32];

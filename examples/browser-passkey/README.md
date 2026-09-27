@@ -18,9 +18,16 @@ a guide you have to translate into code yourself.
    locally. No server is asked what to sign.
 3. Registers a passkey if there is not one yet, then runs the assertion ceremony
    with **the payload as the WebAuthn challenge**.
-4. Verifies the assertion before using it: challenge binding (hash the received
-   `clientDataJSON`, compare to the payload), the UP/UV flags, and the ES256
-   signature over `authenticatorData || SHA-256(clientDataJSON)`.
+4. Verifies the assertion before using it: challenge binding (the challenge in
+   the received `clientDataJSON` must be an encoding of the payload — base64url
+   with or without padding, standard base64, or hexadecimal), the UP/UV flags,
+   and the ES256 signature over `authenticatorData || SHA-256(clientDataJSON)`.
+   Comparing `SHA-256(clientDataJSON)` against the payload instead — which an
+   earlier revision did, following an earlier revision of
+   [`docs/passkeys.md`](../../docs/passkeys.md) — can never hold: the authenticator
+   does not sign a hash of the client data as the challenge, it signs
+   `authenticatorData || SHA-256(clientDataJSON)` and carries the challenge
+   inside that JSON.
 5. Builds the signature ScVal — `{ public_key, signature }` with the 65-byte
    uncompressed SEC1 key and the 64-byte `r || s` signature, the shape
    `soroauth.Secp256r1SignatureScVal` emits and the passkey golden vectors in
@@ -100,12 +107,21 @@ What *is* checked is `app.test.mjs`, which runs in CI and locally
 `cd testdata/gen && npm ci`): the SDK calls the flow makes, the credential-arm
 walk, the explorer link, the DER-to-compact conversion, and the signature ScVal
 shape, all against the same pinned `@stellar/stellar-sdk@17.1.0` the page loads.
-It exists because it already caught a real bug — the page was written against
-the 16.x XDR accessor methods (`entry.credentials()`,
-`credentials.switch().name`, `new xdr.ScSymbol(...)`, `new xdr.ScMap(...)`)
-while importing 17.1.0, whose bindings expose read-only properties, a `type`
-discriminant and factories that take plain values. In a browser that would have
-shown up as an unexplained `TypeError`.
+It exists because it already caught real bugs that a browser would have shown
+as, at best, an unexplained `TypeError`:
+
+- the page was written against the 16.x XDR accessor methods
+  (`entry.credentials()`, `credentials.switch().name`, `new xdr.ScSymbol(...)`,
+  `new xdr.ScMap(...)`) while importing 17.1.0, whose bindings expose read-only
+  properties, a `type` discriminant and factories that take plain values;
+- it passed the raw 32-byte X coordinate as `public_key` while
+  `Secp256r1SignatureScVal` and the passkey golden vectors both use the 65-byte
+  uncompressed SEC1 key;
+- its challenge-binding check compared `SHA-256(clientDataJSON)` against the
+  payload, which can never hold. `verifyChallengeBinding` now matches the
+  challenge string against the encodings of the payload, the way
+  `WebAuthnAssertion.VerifyChallenge` does, and the check has cases for both
+  accepted spellings and four rejections.
 
 If you run the page and it fails past those checks, that is a bug report worth
 filing — the parts that *are* proven (`preimage` and `writeSignature` against

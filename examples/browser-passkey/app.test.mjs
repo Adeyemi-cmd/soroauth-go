@@ -230,6 +230,80 @@ check(
   "it carries the 65-byte public key and the 64-byte signature",
 );
 
+// --- the challenge-binding check ---------------------------------------------
+//
+// The bug this replaced: an earlier revision of the demo (following an earlier
+// revision of docs/passkeys.md) compared SHA-256(clientDataJSON) against the
+// payload, which can never hold — the hash of the whole client data is not the
+// payload. These cases pin the corrected check.
+
+const payload = new Uint8Array(32).fill(0x2a);
+const payloadHex = Buffer.from(payload).toString("hex");
+const canonicalChallenge = Buffer.from(payload).toString("base64url");
+const clientData = (overrides = {}) =>
+  new TextEncoder().encode(
+    JSON.stringify({
+      type: "webauthn.get",
+      challenge: canonicalChallenge,
+      origin: "http://localhost:8000",
+      ...overrides,
+    }),
+  );
+
+check(
+  app.challengeEncodings(payloadHex).includes(canonicalChallenge) &&
+    app.challengeEncodings(payloadHex).includes(payloadHex),
+  "challengeEncodings offers the base64url and hex spellings of the payload",
+);
+check(
+  app.verifyChallengeBinding(clientData(), payloadHex).type === "webauthn.get",
+  "verifyChallengeBinding accepts the payload as the challenge",
+);
+check(
+  app.verifyChallengeBinding(clientData({ challenge: payloadHex }), payloadHex) !==
+    null,
+  "verifyChallengeBinding accepts a hex-encoded challenge",
+);
+
+let rejected = 0;
+const rejects = (fn, description) => {
+  let threw = false;
+  try {
+    fn();
+  } catch {
+    threw = true;
+  }
+  rejected++;
+  check(threw, description);
+};
+
+rejects(
+  () =>
+    app.verifyChallengeBinding(
+      clientData({
+        challenge: Buffer.from(new Uint8Array(32).fill(0x2b)).toString(
+          "base64url",
+        ),
+      }),
+      payloadHex,
+    ),
+  "verifyChallengeBinding rejects a challenge for a different payload",
+);
+rejects(
+  () =>
+    app.verifyChallengeBinding(clientData({ type: "webauthn.create" }), payloadHex),
+  "verifyChallengeBinding rejects a non-assertion ceremony",
+);
+rejects(
+  () => app.verifyChallengeBinding(new TextEncoder().encode("not json"), payloadHex),
+  "verifyChallengeBinding rejects malformed client data",
+);
+rejects(
+  () => app.verifyChallengeBinding(clientData({ challenge: "" }), payloadHex),
+  "verifyChallengeBinding rejects an empty challenge",
+);
+check(rejected === 4, "all four rejection cases ran");
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed`);
   process.exit(1);
