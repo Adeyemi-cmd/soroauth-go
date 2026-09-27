@@ -26,7 +26,8 @@ Two optional pieces need more:
   [The nested adapter module](#the-nested-adapter-module).
 - **Running the Python parity harness** needs Python 3.10+ and the pinned SDK
   in `testdata/parity-python/requirements.txt`; `make parity` creates a venv
-  and installs it.
+  and installs it. The differential fuzzing harness reuses the same venv and
+  SDK: `make differential`.
 - **Working on the WebAssembly core or the TypeScript wrapper** needs Node
   (the same 22+ the rest of the tooling uses). `make wasm-check` builds the
   module and proves it byte-identical to the golden vectors; `make ts-test`
@@ -49,6 +50,7 @@ rather than across several documents. Run `make help` for the list.
 | `make e2e` | builds the test contract with `stellar-cli` and runs `go test -tags e2e -v ./e2e/...` |
 | `make parity` | installs the pinned Python SDK into `.venv-parity` and runs the parity harness and its tests |
 | `make parity-rust` | runs the Rust stellar-xdr parity harness and its tests (needs Rust 1.93.0) |
+| `make differential` | regenerates the differential fuzzing corpus and checks it with the Go, JS and Python implementations |
 | `make wasm` | builds the js/wasm signing core to `wasm/dist/` |
 | `make wasm-check` | builds the wasm core and replays every golden vector through it |
 | `make ts-test` | typechecks and tests the `@soroauth/wasm` TypeScript package |
@@ -147,8 +149,8 @@ not tagged yet; once it is, the adapter is the module that needs its own
 
 The golden vectors prove soroauth agrees with `@stellar/stellar-sdk`. They
 cannot prove that agreement is *correct*, because a bug shared by both
-implementations would be frozen into the vectors. Two harnesses close that gap
-by recomputing the vectors with other implementations:
+implementations would be frozen into the vectors. Three harnesses close that
+gap by recomputing the vectors with other implementations:
 
 - **Python** (`testdata/parity-python/`), against the separately maintained
   `stellar-sdk` on PyPI. `make parity` imports every vector, rebuilds the
@@ -161,14 +163,23 @@ by recomputing the vectors with other implementations:
   `Cargo.toml` and `Cargo.lock` and the harness refuses to run against another
   version. Cases with no preimage (source-account entries) are skipped loudly
   and counted, and a run that checks nothing fails.
+- **Differential fuzzing** (`testdata/differential/`), which is the one that
+  reaches the entries nobody wrote down. `cmd/difffuzz` generates a random but
+  deterministic corpus across every credentials arm and records this library's
+  preimage and payload for each; `make differential` then requires
+  `@stellar/stellar-sdk` and the Python `stellar-sdk` to reproduce every one.
+  A case that diverged is frozen into `testdata/differential/regressions/` and
+  keeps being checked. **A divergence is a release blocker.**
 - **WebAssembly** (`wasm/parity.mjs`), against the wasm build of this same
   library. `make wasm-check` proves the browser build emits the same bytes as
   the native one.
 
-Both are pinned: the Python SDK in `requirements.txt`, the JS SDK in
-`testdata/gen/package.json`. **Never edit a vector to make a harness pass.** A
-disagreement means one implementation is wrong; open an issue with the protocol
-reference (CAP-46-11, CAP-71-01, CAP-71-02) and investigate.
+The golden-vector harnesses are pinned: the Python SDK in `requirements.txt`,
+the JS SDK in `testdata/gen/package.json`, the differential verifier's JS SDK
+in `testdata/differential/package.json`. **Never edit a vector or a corpus case
+to make a harness pass.** A disagreement means one implementation is wrong;
+open an issue with the protocol reference (CAP-46-11, CAP-71-01, CAP-71-02) and
+investigate.
 
 ## The WebAssembly core and the TypeScript wrapper
 

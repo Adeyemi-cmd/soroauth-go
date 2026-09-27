@@ -7,6 +7,37 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Differential fuzzing across implementations. `cmd/difffuzz` generates a
+  deterministic corpus of random, structurally valid authorization entries
+  across every credentials arm and records this library's preimage and payload
+  for each; `make differential` requires `@stellar/stellar-sdk` and the Python
+  `stellar-sdk` to reproduce every payload, and a case that diverged is frozen
+  into `testdata/differential/regressions/` so it keeps being checked. Fixed
+  vectors only cover the cases someone thought of. (#47)
+
+- The parity suites run on a weekly schedule and on published releases as well
+  as on push to `main`, and the matrix now includes the JS vector drift check
+  and the differential suite. A failure names the suite in its job name and the
+  case in its log. (#48)
+
+- `NewPasskeySignerFromAssertion`, the full passkey signer: it takes a parsed
+  WebAuthn assertion and the credential's P-256 public key, verifies the
+  assertion itself — the UP/UV flags the options require, the challenge binding,
+  and the ES256 signature over
+  `SHA-256(authenticatorData || SHA-256(clientDataJSON))` — and only then writes
+  the `{public_key, signature}` ScVal a passkey wallet's `__check_auth` decodes.
+  A failure is `ErrVerificationFailed` or `ErrSignatureMismatch`, and it works
+  through `AuthorizeEntry` with `ForAddress` unchanged. `ParseDERECDSASignature`
+  and `WebAuthnAssertion.SignedBytes` are the two primitives it is built from. (#26)
+
+- `docs/passkeys.md` teaches the correct challenge check. It previously
+  compared `SHA-256(clientDataJSON)` against the payload, which never held — the
+  authenticator does not sign the client data alone, and its hash is not the
+  payload. It now uses `ParseWebAuthnAssertionForPayload`, which compares the
+  challenge in the received client data against the payload, and the signing
+  example uses `NewPasskeySignerFromAssertion` rather than hand-rolled ES256
+  verification and a callback signer.
+
 - `DescribeSignature` and `SignatureShape` report structural descriptions of uncheckable custom account signatures best-effort without upgrading them into verification verdicts. (#63)
 
 - `VerifyAll` batch verification API with configurable concurrency (`WithConcurrency`), reporting per-entry verdicts without aborting the entire batch on individual entry failures. (#62)
