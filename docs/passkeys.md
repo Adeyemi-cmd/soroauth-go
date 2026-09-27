@@ -18,7 +18,8 @@ Be precise about this before you sign anything valuable:
 |---|---|
 | Preimage, payload, ed25519 signing | Golden vectors (`testdata/vectors/`, byte-identical to `@stellar/stellar-sdk@17.1.0`) and live testnet scenarios (`e2e/RESULTS.md`). |
 | WebAssembly signing core | The same golden vectors replayed through the wasm build (`make wasm-check`). |
-| **The passkey signature shape in this guide** | **Nothing beyond this guide's example.** No golden vector from a passkey wallet library, no e2e scenario against a live host, no wallet contract tested against. See [Gaps](#gaps). |
+| **The P-256 signature ScVal shape** (`{public_key, signature}`, raw low-S `r ‖ s`) | Accepted by a live host: scenario J in `e2e/RESULTS.md` submits a transfer authorized by the `passkey-wallet` fixture, which decodes this ScVal and verifies ES256. Scenario K submits the same entry with a corrupted signature and asserts the host's own `failed secp256r1 verification`. |
+| **WebAuthn assertion binding** (`authenticatorData ‖ SHA-256(clientDataJSON)`, challenge binding) inside a contract | **Nothing.** No shipped contract verifies an assertion; the fixture verifies the payload directly, and the shape above carries no room for the assertion bytes. See [Gaps](#gaps). |
 
 The library itself is v0.1.0 and **unaudited**.
 
@@ -32,10 +33,12 @@ whatever its `__check_auth` says it is. There is no protocol-mandated passkey
 shape.
 
 The ScVal built in [Step 3](#step-3-sign-the-entry) targets the example wallet
-contract defined at the end of this guide, and nothing else. This repository's
-fixture contracts (`e2e/contracts/`) all use `type Signature = ()` — they
-authenticate through CAP-71 delegates and decode no P-256 shape at all — so no
-wallet contract in this repo has been tested with a passkey signature.
+contract defined at the end of this guide. This repository's `passkey-wallet`
+fixture (`e2e/contracts/passkey-wallet`) decodes that same ScVal shape and is
+exercised on testnet by scenarios J and K — but it verifies the ES256 signature
+over the payload alone, not over the WebAuthn assertion bytes, so it is not a
+WebAuthn verifier and does not test this guide's challenge binding. The other
+fixtures use `type Signature = ()` and decode no P-256 shape at all.
 Prior art exists in the ecosystem (for example
 [kalepail/passkey-kit](https://github.com/kalepail/passkey-kit), whose wallet
 is a Soroban contract with its own signature format), but soroauth has not
@@ -353,8 +356,10 @@ type Signature = PasskeySig;   // #[contracttype]: { public_key: BytesN<33-ish>,
 //   3. fail closed on anything else
 ```
 
-This guide does **not** ship that contract, and no contract with this shape
-has been deployed or e2e-tested in this repository. If you write one, note two
+This guide does **not** ship that contract. The `passkey-wallet` fixture comes
+closest — the same ScVal shape, deployed and e2e-tested by scenarios J and K —
+but it verifies the signature over the payload alone and does not implement the
+WebAuthn binding described here. If you write one, note two
 protocol facts you will have to design around:
 
 - `__check_auth` receives the payload hash and the contexts, **not** the
@@ -402,9 +407,11 @@ tracked as issues:
   takes an assertion, self-verifies like `NewEd25519Signer` does, and targets
   a specific wallet contract's shape.
 - **#27 — golden vectors from a real passkey wallet library**, so the ScVal
-  shape is proven byte-for-byte rather than asserted in a guide.
-- **#28 — a passkey e2e scenario on testnet**, which is the evidence table
-  row this guide cannot yet cite.
+  shape is proven byte-for-byte rather than asserted in a guide.- **#28 — a passkey e2e scenario on testnet**: landed as scenarios J and K. They
+  prove the P-256 ScVal shape is accepted — and refused when corrupt — by a live
+  host. They do **not** prove assertion binding, because the fixture they target
+  verifies the payload directly; a contract that verifies
+  `authenticatorData ‖ SHA-256(clientDataJSON)` is still missing.
 - **#29 — CLI `--assertion`**: landed in ce2fc47 against an API that did not
   exist, reverted in a0fc6ce, and re-lands when #25 and #26 do.
 
