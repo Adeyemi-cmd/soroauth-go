@@ -14,7 +14,7 @@ NODE ?= node
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/soroauth
 
-.PHONY: all help fmt vet test build vectors vectors-check e2e clean parity parity-rust wasm wasm-check wasm-budget ts-test
+.PHONY: all help fmt vet test build vectors vectors-check e2e clean parity parity-rust differential wasm wasm-check wasm-budget ts-test
 
 # The default target runs exactly what a pull request has to pass before the
 # golden-vector drift check, which needs Node and the network.
@@ -32,6 +32,7 @@ help:
 	@echo "  make e2e           build the test contract and run the live testnet suite"
 	@echo "  make parity        run the Python stellar-sdk parity harness"
 	@echo "  make parity-rust   run the Rust stellar-xdr parity harness"
+	@echo "  make differential  regenerate the differential corpus and check it with JS and Python"
 	@echo "  make wasm          build the js/wasm signing core into wasm/dist/"
 	@echo "  make wasm-check    build the wasm core and prove it matches the golden vectors"
 	@echo "  make wasm-budget   build the wasm core and fail if it is over its size ceiling"
@@ -95,6 +96,37 @@ parity:
 		pip install -q -r testdata/parity-python/requirements.txt && \
 		python3 testdata/parity-python/parity.py && \
 		python3 testdata/parity-python/test_parity.py
+
+# The differential fuzzing harness. cmd/difffuzz generates a deterministic
+# corpus of random entries and records this library's preimage and payload for
+# each; the JS verifier and the Python parity harness (pointed at the same
+# corpus) then have to reproduce every one. See
+# testdata/differential/README.md.
+#
+# Regenerating the corpus must not change the committed files: if it does, the
+# generator moved and the regenerated corpus belongs in the same commit. The
+# check mirrors vectors-check.
+differential:
+	@command -v python3 >/dev/null 2>&1 || { \
+		echo "python3 is required for the differential harness"; \
+		exit 1; \
+	}
+	go run ./cmd/difffuzz
+	@if ! git diff --exit-code -- testdata/differential/corpus; then \
+		echo; \
+		echo "The committed differential corpus differs from freshly generated cases."; \
+		echo "Never edit a case by hand. Commit the regenerated corpus with the"; \
+		echo "generator change, or investigate why the recording moved."; \
+		exit 1; \
+	fi
+	cd testdata/differential && $(NPM) ci && $(NODE) verify.mjs
+	python3 -m venv .venv-parity
+	. .venv-parity/bin/activate && \
+		pip install -q -r testdata/parity-python/requirements.txt && \
+		python3 testdata/parity-python/parity.py --vectors testdata/differential/corpus && \
+		if ls testdata/differential/regressions/*.json >/dev/null 2>&1; then \
+			python3 testdata/parity-python/parity.py --vectors testdata/differential/regressions; \
+		fi
 
 # The Rust parity harness recomputes every vector's preimage and payload with
 # the stellar-xdr crate, the same XDR implementation the Soroban host uses. The
