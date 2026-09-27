@@ -14,7 +14,7 @@ NODE ?= node
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/soroauth
 
-.PHONY: all help fmt vet test build vectors vectors-check e2e clean parity parity-rust differential wasm wasm-check wasm-budget ts-test
+.PHONY: all help fmt vet test build vectors vectors-check demo-check e2e clean parity parity-rust differential wasm wasm-check wasm-budget ts-test
 
 # The default target runs exactly what a pull request has to pass before the
 # golden-vector drift check, which needs Node and the network.
@@ -27,8 +27,9 @@ help:
 	@echo "  make vet           go vet ./..."
 	@echo "  make test          go test ./..."
 	@echo "  make build         build the CLI to $(BIN)"
-	@echo "  make vectors       regenerate testdata/vectors from the pinned JS SDK"
+	@echo "  make vectors       regenerate testdata/vectors from the pinned reference libraries"
 	@echo "  make vectors-check regenerate and fail if the committed vectors changed"
+	@echo "  make demo-check    check the browser demo's logic against the pinned SDK"
 	@echo "  make e2e           build the test contract and run the live testnet suite"
 	@echo "  make parity        run the Python stellar-sdk parity harness"
 	@echo "  make parity-rust   run the Rust stellar-xdr parity harness"
@@ -61,8 +62,13 @@ build:
 # Golden vectors are generated, committed artefacts. Regenerating them is safe;
 # `vectors-check` is the one that proves the committed files match, which is
 # what CI runs.
+#
+# Two generators, two reference implementations: gen.mjs writes the
+# authorization-entry vectors against @stellar/stellar-sdk, and gen-passkey.mjs
+# writes the passkey signature-shape vectors against smart-account-kit. Both
+# write under testdata/vectors, so one diff covers both.
 vectors:
-	cd testdata/gen && $(NPM) ci && $(NODE) gen.mjs
+	cd testdata/gen && $(NPM) ci && $(NODE) gen.mjs && $(NODE) gen-passkey.mjs
 
 vectors-check: vectors
 	@if ! git diff --exit-code -- testdata/vectors; then \
@@ -72,6 +78,14 @@ vectors-check: vectors
 		echo "generator change, or investigate why the reference output moved."; \
 		exit 1; \
 	fi
+
+# The browser demo needs a browser, a platform authenticator and a deployed
+# passkey wallet contract on testnet, so it cannot run end to end here. This
+# runs everything about it that does not, against the SDK copy testdata/gen
+# pins, so an API drift in the demo fails here instead of only in a browser.
+# Needs `cd testdata/gen && npm ci` first.
+demo-check:
+	$(NODE) examples/browser-passkey/app.test.mjs
 
 # The e2e suite needs the contract wasm built first, and stellar-cli to build
 # it. Both failures are explicit rather than a confusing test error later.
