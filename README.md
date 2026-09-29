@@ -826,6 +826,9 @@ requires Go, JS and Python to agree on every payload. A divergence is a release
 blocker, not a test flake. See
 [testdata/differential/README.md](testdata/differential/README.md).
 
+What that agreement does and does not establish — and what no offline suite can
+rule out — is stated in one place in [docs/parity.md](docs/parity.md).
+
 ## Status
 
 **v0.1.0. Unaudited.** The wire format is fixed by the protocol and pinned by
