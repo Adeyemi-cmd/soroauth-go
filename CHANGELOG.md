@@ -7,6 +7,34 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- The P-256 primitives have a runnable doc example each:
+  `ExampleSignSecp256r1`, `ExampleVerifySecp256r1`,
+  `ExampleParseSecp256r1Signature`, `ExampleParseDERECDSASignature` and
+  `ExampleSecp256r1SignatureScVal`. These are the helpers someone writing their
+  own signer reaches for first, so each is shown with the property that makes it
+  safe rather than only its happy path: the fixed-width low-S output, the
+  refusal of a wrong payload and of a high-S encoding, the refusal to pad a
+  short signature or to accept DER with trailing bytes, and the sorted
+  `{public_key, signature}` map a custom account's `__check_auth` decodes. The
+  two parse examples share the key material from the committed passkey vector,
+  so they can be read side by side and cannot drift from it. The 64 signature
+  bytes are non-deterministic — ES256 draws a fresh nonce per signature — so
+  every example prints the invariants rather than the signature. `go test` runs
+  them, so a change to any of the five is caught rather than described. (#33)
+
+- `NewPasskeySigner` has a runnable end-to-end example.
+  `ExampleNewPasskeySigner_authorizeEndToEnd` signs a passkey wallet's
+  address-bound credential node: it derives the wallet address and its P-256
+  credential key from fixed labels, signs with `SignSecp256r1` and
+  `Secp256r1SignatureScVal`, writes the result with `AuthorizeEntry` and
+  `ForAddress`, and then checks the signature that landed in the entry against
+  the payload rebuilt from that same entry. It also shows the user-verification
+  guard refusing an assertion that only proves presence. Every printed line is
+  stable across runs; the 64 signature bytes are not, because ES256 signs with a
+  fresh nonce each time, so they are verified rather than printed. Examples are
+  compiled and run by `go test`, so this one cannot rot the way a prose snippet
+  can. (#32)
+
 - `ExpirationAfter` has a runnable doc example. `ExampleExpirationAfter` walks
   the "about an hour" case and both refusals (a zero lifetime, and a sum that
   would overflow a ledger sequence), so the function's contract is executed by
