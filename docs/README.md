@@ -27,6 +27,7 @@ the architecture note and the guides is the one they need. The repository root
 | [verification-limits](verification-limits.md)   | What `soroauth verify` can and cannot establish offline.                                                           |
 | [verification-service](verification-service.md) | How to run the HTTP verification service, and what it will and will not do.                                        |
 | [sdk-support](sdk-support.md)                   | Which `go-stellar-sdk` versions are supported and how the pin moves.                                               |
+| [browser](browser.md)                           | How to use soroauth from a browser page: installing and loading the wasm module, and the passkey flow.             |
 
 ## Reference
 
