@@ -37,6 +37,10 @@
       "allocs": 1900,
       "bytes": 109000
     },
+    "BenchmarkAuthorizeBatch": {
+      "allocs": 3200,
+      "bytes": 190000
+    },
     "BenchmarkAuthorizeInvocation": {
       "allocs": 112,
       "bytes": 7000
